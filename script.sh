@@ -19,9 +19,10 @@ export PGDATABASE PGUSER PGHOST PGPORT PGPASSWORD
 find "$SRC_DIR" -type f ! -name '.*' -print0 |
 while IFS= read -r -d '' file; do
   base="$(basename "$file")"
-  base_sql="$(sql_escape "$base")"
+  new_path="$DEST_DIR$base"
+
   if mv -n -- "$file" "$DEST_DIR"; then
     psql -v ON_ERROR_STOP=1 -c \
-      "DELETE FROM asset WHERE \"originalPath\" = '$(sql_escape "$file")';"
+      "UPDATE asset SET \"originalPath\" = '$(sql_escape "$new_path")' WHERE \"originalPath\" = '$(sql_escape "$file")';"
   fi
 done
