@@ -5,7 +5,7 @@ This script moves files from the Immich `upload` directory to a defined external
 
 ## Features
 - Moves non-hidden files from the upload directory into a permanent external library
-- Cleans up PostgreSQL records referencing moved files
+- Updates PostgreSQL records to reflect the new file paths  
 - Prevents duplicate moves (`mv -n`)
 - Fully configurable via environment variables at the top of the script
 
