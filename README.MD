@@ -40,12 +40,8 @@ chmod +x migrate.sh
 The script will:
 1. Find all non-hidden files under `SRC_DIR`
 2. Move them to `DEST_DIR`
-3. Delete their entries from the `asset` table in PostgreSQL
+3. Update their entries from the `asset` table in PostgreSQL
 
-## Important Note
-After running the script, the moved assets will not immediately appear in Immich. This is because the script does not trigger an external library scan. This was left unimplemented because:
-- Immich automatically scans external libraries daily at midnight
-- You can enable library watching for near real-time updates
 
 ## Notes
 - Duplicate filenames across different folders will overwrite unless `mv -n` is used (kept by default)
