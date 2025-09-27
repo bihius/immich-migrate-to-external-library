@@ -18,8 +18,8 @@ This script moves files from the Immich `upload` directory to a defined external
 Edit the variables at the top of the script:
 
 ```
-SRC_DIR="/opt/immich/upload/upload/"
-DEST_DIR="/srv/gallery/Zosia/"
+SRC_DIR="/opt/immich/upload/upload/" #default path for immich installed with proxmox helper scripts
+DEST_DIR="/mnt/external/"
 PGDATABASE="immich"
 PGUSER="immich"
 PGHOST="localhost"
