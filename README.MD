@@ -1,4 +1,3 @@
-```markdown
 # Immich External Library Migration Script
 
 ## Overview
@@ -52,5 +51,4 @@ After running the script, the moved assets will not immediately appear in Immich
 - Duplicate filenames across different folders will overwrite unless `mv -n` is used (kept by default)
 - Use version control and backups before running on production data
 - Adjust directories and database credentials as needed
-```
 
