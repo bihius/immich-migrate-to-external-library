@@ -8,6 +8,7 @@ This script moves files from the Immich `upload` directory to a defined external
 - Updates PostgreSQL records to reflect the new file paths  
 - Prevents duplicate moves (`mv -n`)
 - Fully configurable via environment variables at the top of the script
+- Preservs original assets file name
 
 ## Requirements
 - Bash shell
