@@ -1,7 +1,7 @@
 # Immich External Library Migration Script
 
 ## Overview
-This script moves files from the Immich `upload` directory to a defined external library folder and removes their corresponding entries from the PostgreSQL database. It ensures all assets remain accessible in the external path while keeping Immich's database clean.
+This script moves files from the Immich `upload` directory to a defined external library folder and updates their corresponding entries in the PostgreSQL database. 
 
 ## Features
 - Moves non-hidden files from the upload directory into a permanent external library
@@ -12,7 +12,7 @@ This script moves files from the Immich `upload` directory to a defined external
 ## Requirements
 - Bash shell
 - `psql` (PostgreSQL client)
-- Access to Immich's PostgreSQL database with proper credentials
+- Access to Immich's PostgreSQL database
 
 ## Configuration
 Edit the variables at the top of the script:
@@ -40,11 +40,12 @@ chmod +x migrate.sh
 The script will:
 1. Find all non-hidden files under `SRC_DIR`
 2. Move them to `DEST_DIR`
-3. Update their entries from the `asset` table in PostgreSQL
+3. Update their entries in the `asset` table in PostgreSQL
 
 
 ## Notes
 - Duplicate filenames across different folders will overwrite unless `mv -n` is used (kept by default)
 - Use version control and backups before running on production data
 - Adjust directories and database credentials as needed
+- Script will move assets directly - no subfolders
 
