@@ -17,6 +17,13 @@ sql_escape() {
 export LC_ALL=C
 export PGDATABASE PGUSER PGHOST PGPORT PGPASSWORD
 
+# Validate that the specified library exists
+LIBRARY_ID=$(psql -At -c "SELECT id FROM libraries WHERE name = '$(sql_escape "$LIBRARY_NAME")';")
+if [ -z "$LIBRARY_ID" ]; then
+  echo "Error: Library '$LIBRARY_NAME' not found in database. Please create it in Immich first." >&2
+  exit 1
+fi
+
 find "$SRC_DIR" -type f ! -name '.*' -print0 |
 while IFS= read -r -d '' file; do
   orig_name=$(psql -At -c \
@@ -32,7 +39,7 @@ while IFS= read -r -d '' file; do
         \"originalPath\" = '$(sql_escape "$new_path")',
         \"isExternal\" = true,
         \"deviceId\" = 'Library Import',
-        \"libraryId\" = (SELECT id FROM libraries WHERE name = '$(sql_escape "$LIBRARY_NAME")')
+        \"libraryId\" = '$(sql_escape "$LIBRARY_ID")'
       WHERE \"originalPath\" = '$(sql_escape "$file")';"
   fi
 done
