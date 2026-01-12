@@ -3,6 +3,7 @@ set -euo pipefail
 
 SRC_DIR="/opt/immich/upload/upload/" #default path for immich installed via proxmox helper scripts. 
 DEST_DIR="/mnt/external_library/"
+LIBRARY_NAME="External Library" # name of your external library in Immich
 PGDATABASE="immich"
 PGUSER="immich"
 PGHOST="localhost"
@@ -27,6 +28,11 @@ while IFS= read -r -d '' file; do
 
   if mv -n -- "$file" "$new_path"; then
     psql -v ON_ERROR_STOP=1 -c \
-      "UPDATE asset SET \"originalPath\" = '$(sql_escape "$new_path")' WHERE \"originalPath\" = '$(sql_escape "$file")';"
+      "UPDATE asset SET
+        \"originalPath\" = '$(sql_escape "$new_path")',
+        \"isExternal\" = true,
+        \"deviceId\" = 'Library Import',
+        \"libraryId\" = (SELECT id FROM libraries WHERE name = '$(sql_escape "$LIBRARY_NAME")')
+      WHERE \"originalPath\" = '$(sql_escape "$file")';"
   fi
 done
