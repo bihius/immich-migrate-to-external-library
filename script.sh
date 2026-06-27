@@ -51,16 +51,21 @@ vlog() { if [[ "$VERBOSE" == true ]]; then log "$@"; fi; }
 
 # --- Preflight --------------------------------------------------------------
 
-# File-level lock prevents concurrent runs. Stale locks (PID gone) are ignored.
-if [[ -f "$LOCK_FILE" ]]; then
-  lock_pid=$(cat "$LOCK_FILE" 2>/dev/null || echo "")
-  if [[ -n "$lock_pid" ]] && kill -0 "$lock_pid" 2>/dev/null; then
-    echo "ERROR: another instance is running (PID $lock_pid)" >&2
-    exit 1
+# Acquire lock atomically using noclobber (set -C). Stale locks (PID gone) are
+# removed and retried. Two concurrent starts hitting the retry simultaneously
+# will race — one wins the second noclobber attempt, the other exits cleanly.
+while true; do
+  if ( set -C; echo $$ > "$LOCK_FILE" ) 2>/dev/null; then
+    break
   fi
-  rm -f "$LOCK_FILE"
-fi
-echo $$ > "$LOCK_FILE"
+  lock_pid=$(cat "$LOCK_FILE" 2>/dev/null || echo "")
+  if [[ -z "$lock_pid" ]] || ! kill -0 "$lock_pid" 2>/dev/null; then
+    rm -f "$LOCK_FILE"   # stale lock — retry
+    continue
+  fi
+  echo "ERROR: another instance is running (PID $lock_pid)" >&2
+  exit 1
+done
 trap 'rm -f "$LOCK_FILE"' EXIT
 
 export LC_ALL=C
@@ -99,18 +104,21 @@ FAILED=0
 while IFS= read -r -d '' file; do
   TOTAL=$((TOTAL + 1))
 
-  # Look up the asset by its current path in the DB
+  # Look up the asset by its current path in the DB.
+  # AND "libraryId" IS NULL ensures already-external assets are caught here
+  # (before the file is moved) rather than triggering a move-then-restore cycle.
   orig_name=$(psql -At -v orig_path="$file" <<'EOF'
 SELECT "originalFileName"
 FROM asset
 WHERE "originalPath" = :'orig_path'
   AND "deletedAt" IS NULL
+  AND "libraryId" IS NULL
 LIMIT 1;
 EOF
 )
 
   if [[ -z "$orig_name" ]]; then
-    vlog "skip (not in DB): $file"
+    vlog "skip (not in DB / soft-deleted / already external): $file"
     SKIPPED_NOT_IN_DB=$((SKIPPED_NOT_IN_DB + 1))
     continue
   fi
@@ -129,10 +137,12 @@ EOF
     continue
   fi
 
-  # Move the file. mv -n preserves any existing destination (defense in depth
-  # alongside the [[ -e ]] check above — still useful for race conditions).
-  if ! mv -n -- "$file" "$new_path"; then
-    log "FAIL move: $file -> $new_path"
+  # Move the file. mv -n skips the move if the destination already exists but
+  # exits 0 on both macOS and Linux — check that the source is gone to confirm
+  # the move actually happened (catches the [[ -e ]] / mv race).
+  mv -n -- "$file" "$new_path"
+  if [[ -e "$file" ]]; then
+    log "FAIL move (destination appeared mid-flight): $file -> $new_path"
     FAILED=$((FAILED + 1))
     continue
   fi
@@ -142,7 +152,9 @@ EOF
   # NULL — without it, a content-duplicate already in the external library
   # would cause the UPDATE to abort and roll back, leaving a moved file with
   # an unchanged DB record (drift). With the guard, we skip cleanly.
-  rows=$(psql -At \
+  # Capture psql exit code explicitly — if psql fails, restore the file
+  # before exiting so set -e doesn't leave a moved file with a stale DB path.
+  if ! rows=$(psql -At \
     -v ON_ERROR_STOP=1 \
     -v orig_path="$file" \
     -v new_path="$new_path" \
@@ -168,17 +180,26 @@ WITH updated AS (
 )
 SELECT COUNT(*) FROM updated;
 EOF
-)
+  ); then
+    log "FAIL DB (restoring): $orig_name"
+    mv -- "$new_path" "$file" 2>/dev/null || log "WARN: could not restore $file after DB failure"
+    FAILED=$((FAILED + 1))
+    continue
+  fi
 
   if [[ "$rows" == "1" ]]; then
     vlog "moved:    $file -> $new_path"
     MOVED=$((MOVED + 1))
   else
-    # UPDATE didn't match — most likely the constraint guard fired. Move the
-    # file back to its source so we don't leak it.
+    # UPDATE returned 0 rows — the NOT EXISTS guard fired (checksum duplicate).
+    # Move the file back to its source so we don't leak it.
     log "skip (constraint conflict, restoring): $orig_name"
-    mv -n -- "$new_path" "$file" 2>/dev/null || log "WARN: could not restore $file"
-    SKIPPED_CONSTRAINT=$((SKIPPED_CONSTRAINT + 1))
+    if mv -- "$new_path" "$file"; then
+      SKIPPED_CONSTRAINT=$((SKIPPED_CONSTRAINT + 1))
+    else
+      log "WARN: could not restore $file — file stranded at $new_path"
+      FAILED=$((FAILED + 1))
+    fi
   fi
 
   # Progress every 500 files (silent during --verbose since vlog is per-file)
@@ -192,7 +213,11 @@ done < <(find "$SRC_DIR" -type f ! -name '.*' -print0)
 log ""
 log "=== Summary ==="
 log "Total files seen:         $TOTAL"
-log "Moved + DB updated:       $MOVED"
+if [[ "$DRY_RUN" == true ]]; then
+  log "Would move (dry-run):     $MOVED"
+else
+  log "Moved + DB updated:       $MOVED"
+fi
 log "Skipped (not in DB):      $SKIPPED_NOT_IN_DB"
 log "Skipped (dest exists):    $SKIPPED_DEST_EXISTS"
 log "Skipped (DB constraint):  $SKIPPED_CONSTRAINT"
